@@ -115,7 +115,7 @@ def draw_edges(denormalized_coordinates, frame, edges_colors, threshold):
 ### ----------------------------------------------------------------------------------------------- ###
 
 ## Run inference on a video
-def run_inference(video_path, model_path, input_size, threshold, output_path):
+def run_inference(video_path, model_folder_path, models, threshold, output_path):
     """
     Run inference of 17 joints of a person on a video file using a MoveNet model.
     Saves the output video with the keypoints and edges drawn.
@@ -149,9 +149,15 @@ def run_inference(video_path, model_path, input_size, threshold, output_path):
     interpreter = tf.lite.Interpreter(model_path)
     interpreter.allocate_tensors()
 
+    # Check if the model name contains "thunder"
+    if "thunder" in model:
+        input_size = 256
+    else:
+        input_size = 192
+
     # Iterate over the frames
     while True:
-        ret, frame = capture.read()
+        _, frame = capture.read()
         if frame is None: 
             break        
 
@@ -180,9 +186,8 @@ def run_inference(video_path, model_path, input_size, threshold, output_path):
         output_frames.append(frame)
         # Update the progress bar
         bar.update(1)
-    bar.close()
-
-    print("\nInference completed\n")
+        
+        
     # Save the output video
     bar2 = tqdm(total=frame_count, desc = "Outputting frames", unit = "frames")
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -190,24 +195,29 @@ def run_inference(video_path, model_path, input_size, threshold, output_path):
     for frame_p in output_frames:
         out.write(frame_p)
         bar2.update(1)
-    bar2.close()
+    bar.close()
     print(f"\nOutput video saved at {output_path}")
     capture.release()
     out.release()
+    
+    return output_frames
+
+
 
 ### ----------------------------------------------------------------------------------------------- ###
-model_folder_path = 'MoveNet/Models/tflite'
 models = [
     "movenet_lightning_f16.tflite",
     "movenet_lightning_int8.tflite",
     "movenet_thunder_f16.tflite",
-    "movenet_thunder_int8.tflite",
-]
+    "movenet_thunder_int8.tflite"
+    ]
+    
 
-output_frames = run_inference(
-    video_path='./EMU_videos/p123-19.mp4',
-    model_path=f"{model_folder_path}/{models[0]}",
-    input_size = 192,
-    threshold=0.11,
-    output_path='C:/Users/p0121182/Project/Skeleton_Tracking/EMU_videos/testmp4.mp4'
-)
+for model in models:
+    output_frames = run_inference(
+        video_path='./EMU_videos/p123-19.mp4',
+        model_folder_path = 'MoveNet/Models/tflite',
+        models = models,
+        threshold = 0.11,
+        output_path=f'C:/Users/p0121182/Project/Skeleton_Tracking/EMU_videos/{model}.mp4'
+        )
