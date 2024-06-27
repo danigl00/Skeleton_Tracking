@@ -112,7 +112,7 @@ def draw_edges(denormalized_coordinates, frame, edges_colors, threshold):
                 lineType=cv2.LINE_AA
             )
 
-### ----------------------------------------------------------------------------- ###
+### ----------------------------------------------------------------------------------------------- ###
 
 ## Run inference on a video
 def run_inference(video_path, model_path, input_size, threshold, output_path):
@@ -193,7 +193,7 @@ def run_inference(video_path, model_path, input_size, threshold, output_path):
     bar.close()
 
 
-
+### ----------------------------------------------------------------------------------------------- ###
 model_folder_path = 'MoveNet/Models/tflite'
 models = [
     "movenet_lightning_f16.tflite",
@@ -207,5 +207,5 @@ output_frames = run_inference(
     model_path=f"{model_folder_path}/{models[0]}",
     input_size = 192,
     threshold=0.11,
-    output_path='testmp4.mp4'
+    output_path='C:/Users/p0121182/Project/Skeleton_Tracking/EMU_videos/testmp4.mp4'
 )
