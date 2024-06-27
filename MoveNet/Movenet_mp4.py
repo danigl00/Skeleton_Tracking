@@ -1,8 +1,8 @@
 import tensorflow as tf
 import tensorflow_hub as hub
 import cv2
-from matplotlib import pyplot as plt
 import numpy as np
+from tqdm import tqdm
 
 blue = (26, 128, 187)
 orange = (234, 128, 28)
@@ -29,7 +29,6 @@ EDGE_COLORS = {
 }
 
 
-
 def movenet(input_image, interpreter):
     """Runs detection on an input image.
 
@@ -38,7 +37,7 @@ def movenet(input_image, interpreter):
         pixels. Note that the height/width should already be resized and match the
         expected input resolution of the model before passing into this function.
 
-    Returns:
+    Output:
       A [1, 1, 17, 3] float numpy array representing the predicted keypoint
       coordinates and scores.
     """
@@ -53,11 +52,22 @@ def movenet(input_image, interpreter):
     keypoints_with_scores = interpreter.get_tensor(output_details[0]['index'])
     return keypoints_with_scores
 
-def draw_keypoints(frame, keypoints, threshold, WIDTH, HEIGHT):
-    """Draws the keypoints on a image frame"""
+def draw_keypoints(frame, keypoints, threshold):
+    """Draws the keypoints on a image frame
     
-    # Denormalize the coordinates of the keypoints 
-    denormalized_coordinates = np.squeeze(np.multiply(keypoints, [WIDTH,HEIGHT,1]))
+    Args:
+    frame: np.array, image frame.
+    keypoints: np.array, keypoints detected by the model.
+    threshold: float, threshold for the keypoints.
+
+    Output: frame with the keypoints drawn.
+
+    """
+    # Get the shape of the frame
+    x, y, _ = frame.shape
+    # Denormalize the coordinates of the keypoints to fit orginal frame
+    denormalized_coordinates = np.squeeze(np.multiply(keypoints, [x,y,1]))
+    # Iterate over the keypoints
     for keypoint in denormalized_coordinates:
         # Unpack the keypoint values
         keypoint_y, keypoint_x, keypoint_confidence = keypoint
@@ -66,13 +76,25 @@ def draw_keypoints(frame, keypoints, threshold, WIDTH, HEIGHT):
             cv2.circle(
                 img=frame, 
                 center=(int(keypoint_x), int(keypoint_y)), 
-                radius=4, 
+                radius=2, 
                 color=(255,0,0),
                 thickness=-1
             )
     return denormalized_coordinates
 
-def draw_edges(denormalized_coordinates, frame, edges_colors, threshold, WIDTH, HEIGHT):
+def draw_edges(denormalized_coordinates, frame, edges_colors, threshold):
+    """Draws the edges between the keypoints
+
+    Outpit: frame with the edges drawn.
+
+    Args:
+    denormalized_coordinates: np.array, coordinates of the keypoints.
+    frame: np.array, image frame.
+    edges_colors: dict, colors of the edges.
+    threshold: float, threshold for the keypoints.
+
+    """
+    # Iterate over the edges
     for edge, color in edges_colors.items():
         # Get the dict value associated to the actual edge
         p1, p2 = edge
@@ -86,81 +108,93 @@ def draw_edges(denormalized_coordinates, frame, edges_colors, threshold, WIDTH, 
                 pt1=(int(x1), int(y1)),
                 pt2=(int(x2), int(y2)), 
                 color=color, 
-                thickness=2, 
+                thickness=1, 
                 lineType=cv2.LINE_AA
             )
 
-def loop(frame, keypoints, threshold, WIDTH, HEIGHT):
+### ----------------------------------------------------------------------------- ###
+
+## Run inference on a video
+def run_inference(video_path, model_path, input_size, threshold, output_path):
     """
-    Main loop : Draws the keypoints and edges for each instance
+    Run inference of 17 joints of a person on a video file using a MoveNet model.
+    Saves the output video with the keypoints and edges drawn.
+
+    Args:
+    video_path: str, path to the video file.
+    model_path: str, path to the tflite model.
+    input_size: int, size of the input image.
+    threshold: float, threshold for the keypoints.
+    output_path: str, path to save the output video.
     """
-    
-    # Loop through the results
-    for instance in keypoints: 
-        # Draw the keypoints
-        denormalized_coordinates = draw_keypoints(frame, instance, threshold,WIDTH, HEIGHT)
-        # Draw the edges
-        draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold,WIDTH, HEIGHT)
-
-
-def run_inference(video_path, model_path, WIDTH, HEIGHT, threshold, output_path):
-    capture = cv2.VideoCapture(video_path)
-    # Get the frame count
-    frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = int(capture.get(cv2.CAP_PROP_FPS))
-    # Display parameter
-    print(f"Frame count: {frame_count}")
-
+    # Create a list to store the output frames and the initial shape of the video
     output_frames = []
     initial_shape = []
+
+    # Capture the video
+    capture = cv2.VideoCapture(video_path)
+    
+    # Get video parameters
+    frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = int(capture.get(cv2.CAP_PROP_FPS))
     initial_shape.append(int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)))
     initial_shape.append(int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 
+    # Display parameter
+    print(f"Frame count: {frame_count}")    
     print(f"Width: {initial_shape[0]}, Height: {initial_shape[1]}")
+    bar = tqdm(total=frame_count, desc = "Processing frames", unit = "frames")
+
+    # Load the model
     interpreter = tf.lite.Interpreter(model_path)
     interpreter.allocate_tensors()
 
+    # Iterate over the frames
     while True:
         ret, frame = capture.read()
         if frame is None: 
-            break
-        current_index = capture.get(cv2.CAP_PROP_POS_FRAMES)
-        print(f"Processing frame {current_index}/{frame_count}")
+            break        
 
+        # Copy the frame and convert it to RGB
         image = frame.copy()
-        image = cv2.resize(image, (WIDTH,HEIGHT))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        # Resize the image
+        image = cv2.resize(image, (input_size,input_size))
         # Resize to the target shape and cast to an int32 vector
-        input_image = tf.cast(tf.image.resize_with_pad(image, WIDTH, HEIGHT), dtype=tf.int32)
+        input_image = tf.cast(tf.image.resize_with_pad(image, input_size, input_size), dtype=tf.int32)
         # Create a batch (input tensor)
         input_image = tf.expand_dims(input_image, axis=0)
         
         # Perform inference
         keypoints = movenet(input_image, interpreter)
+        
+        # Iterate over the keypoints
+        for instance in keypoints: 
+            # Draw the keypoints
+            denormalized_coordinates = draw_keypoints(frame, instance, threshold)
+            # Draw the edges
+            draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold)
 
-        loop(image, keypoints, threshold, WIDTH, HEIGHT)
-
-        # Add the drawings to the output frames
-        frame_rgb = cv2.cvtColor(
-            cv2.resize(
-                image,(initial_shape[0], initial_shape[1]), 
-                interpolation=cv2.INTER_LANCZOS4
-            ), 
-            cv2.COLOR_BGR2RGB # OpenCV processes BGR images instead of RGB
-        ) 
-        output_frames.append(frame_rgb)
         # Save the output frames as a video
-
+        output_frames.append(frame)
+        # Update the progress bar
+        bar.update(1)
+        
+    # Save the output video
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (initial_shape[0], initial_shape[1]))    
+    out = cv2.VideoWriter(output_path, fourcc, fps, (initial_shape[0], initial_shape[1]))
     for frame_p in output_frames:
         out.write(frame_p)
 
     print(f"Output video saved at {output_path}")
     capture.release()
     out.release()
+    bar.close()
 
-    
-folder_path = 'MoveNet/Models/tflite'
+
+
+model_folder_path = 'MoveNet/Models/tflite'
 models = [
     "movenet_lightning_f16.tflite",
     "movenet_lightning_int8.tflite",
@@ -169,10 +203,9 @@ models = [
 ]
 
 output_frames = run_inference(
-    video_path='./EMU_videos/cut_p229-1_01.mp4',
-    model_path=f"{folder_path}/{models[0]}",
-    WIDTH=192,
-    HEIGHT=192,
+    video_path='./EMU_videos/p123-19.mp4',
+    model_path=f"{model_folder_path}/{models[0]}",
+    input_size = 192,
     threshold=0.11,
     output_path='testmp4.mp4'
 )
