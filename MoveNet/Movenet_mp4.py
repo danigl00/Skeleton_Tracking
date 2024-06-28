@@ -151,7 +151,7 @@ def run_inference(video_path, model_path, input_size, threshold, output_path):
 
     # Iterate over the frames
     while True:
-        ret, frame = capture.read()
+        _, frame = capture.read()
         if frame is None: 
             break        
 
@@ -181,7 +181,7 @@ def run_inference(video_path, model_path, input_size, threshold, output_path):
         # Update the progress bar
         bar.update(1)
     bar.close()
-
+    
     print("\nInference completed\n")
     # Save the output video
     bar2 = tqdm(total=frame_count, desc = "Outputting frames", unit = "frames")
@@ -194,6 +194,8 @@ def run_inference(video_path, model_path, input_size, threshold, output_path):
     print(f"\nOutput video saved at {output_path}")
     capture.release()
     out.release()
+
+    return output_frames
 
 ### ----------------------------------------------------------------------------------------------- ###
 model_folder_path = 'MoveNet/Models/tflite'

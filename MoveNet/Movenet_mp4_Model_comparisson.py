@@ -29,7 +29,7 @@ EDGE_COLORS = {
 }
 
 
-def movenet(input_image, interpreter):
+def movenet(input_image, interpreter, model_flag):
     """Runs detection on an input image.
 
     Args:
@@ -41,16 +41,28 @@ def movenet(input_image, interpreter):
       A [1, 1, 17, 3] float numpy array representing the predicted keypoint
       coordinates and scores.
     """
-    # TF Lite format expects tensor type of uint8.
-    input_image = tf.cast(input_image, dtype=tf.uint8)
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-    interpreter.set_tensor(input_details[0]['index'], input_image.numpy())
-    # Invoke inference.
-    interpreter.invoke()
-    # Get the model prediction.
-    keypoints_with_scores = interpreter.get_tensor(output_details[0]['index'])
+    if model_flag == "tflite":
+       # TF Lite format expects tensor type of uint8.
+        input_image = tf.cast(input_image, dtype=tf.uint8)
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        interpreter.set_tensor(input_details[0]['index'], input_image.numpy())
+        # Invoke inference.
+        interpreter.invoke()
+        # Get the model prediction.
+        keypoints_with_scores = interpreter.get_tensor(output_details[0]['index'])
+    elif model_flag == "tfhub":
+        model = interpreter.signatures['serving_default']
+        # SavedModel format expects tensor type of int32.
+        input_image = tf.cast(input_image, dtype=tf.int32)
+        # Run model inference.
+        outputs = model(input_image)
+        # Output is a [1, 1, 17, 3] tensor.
+        keypoints_with_scores = outputs['output_0'].numpy()
+    else:
+        model = interpreter.signatures['serving_default']
     return keypoints_with_scores
+    
 
 def draw_keypoints(frame, keypoints, threshold):
     """Draws the keypoints on a image frame
@@ -112,10 +124,49 @@ def draw_edges(denormalized_coordinates, frame, edges_colors, threshold):
                 lineType=cv2.LINE_AA
             )
 
+def model_comparison(frames, fps, num_frames, output_path):
+    num_models = len(frames)
+    num_frames = len(frames[0])
+    frame_height, frame_width, channels = frames[0][0].shape
+    
+    # Check all videos have the same number of frames
+    for video_frames in frames:
+        if len(video_frames) != num_frames:
+            raise ValueError("All videos must have the same number of frames.")
+    
+    # Initialize the VideoWriter
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width * 2, frame_height * 2))
+    
+    bar2 = tqdm(total=num_frames, desc="Outputting frames", unit="frames")
+    
+    for i in range(num_frames):
+        # Create an empty frame for the combined video
+        combined_frame = np.zeros((frame_height * 2, frame_width * 2, channels), dtype=np.uint8)
+        
+        # Top-left
+        combined_frame[:frame_height, :frame_width] = frames[0][i]
+        # Top-right
+        combined_frame[:frame_height, frame_width:] = frames[1][i]
+        # Bottom-left
+        combined_frame[frame_height:, :frame_width] = frames[2][i]
+        # Bottom-right
+        combined_frame[frame_height:, frame_width:] = frames[3][i]
+        
+        # Write the combined frame to the output video
+        out.write(combined_frame)
+        bar2.update(1)
+    
+    bar2.close()
+    out.release()
+    print(f"\nOutput video saved at {output_path}")
+
+
+
 ### ----------------------------------------------------------------------------------------------- ###
 
 ## Run inference on a video
-def run_inference(video_path, model_folder_path, models, threshold, output_path):
+def run_inference(video_path, model_folder_path, models, threshold):
     """
     Run inference of 17 joints of a person on a video file using a MoveNet model.
     Saves the output video with the keypoints and edges drawn.
@@ -128,80 +179,89 @@ def run_inference(video_path, model_folder_path, models, threshold, output_path)
     output_path: str, path to save the output video.
     """
     # Create a list to store the output frames and the initial shape of the video
-    output_frames = []
     initial_shape = []
+    stacked_frames = []
 
     # Capture the video
     capture = cv2.VideoCapture(video_path)
     
     # Get video parameters
-    frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    num_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = int(capture.get(cv2.CAP_PROP_FPS))
     initial_shape.append(int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)))
     initial_shape.append(int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 
     # Display parameter
-    print(f"Frame count: {frame_count}")    
+    print(f"Frame count: {num_frames}")    
     print(f"Width: {initial_shape[0]}, Height: {initial_shape[1]}")
-    bar = tqdm(total=frame_count, desc = "Processing frames", unit = "frames")
 
-    # Load the model
-    interpreter = tf.lite.Interpreter(model_path)
-    interpreter.allocate_tensors()
+    # Iterate over the models
+    for model in models:
+        capture = cv2.VideoCapture(video_path)
+        output_frames = []
+        bar = tqdm(total=num_frames, desc = f"Processing frames of {model}", unit = "frames")
+        model_path = f"{model_folder_path}{model}"
+        # Load the model
+        if "tflite" in model:
+            interpreter = tf.lite.Interpreter(model_path)
+            interpreter.allocate_tensors()
+            model_flag = "tflite"
+        else:
+            model_flag = "tfhub"
+            if "movenet_lightning" in model:
+                interpreter = hub.load("https://tfhub.dev/google/movenet/singlepose/lightning/4")
+            elif "movenet_thunder" in model:
+                interpreter = hub.load("https://tfhub.dev/google/movenet/singlepose/thunder/4")
+            else:
+                interpreter = hub.load('https://www.kaggle.com/models/google/movenet/TensorFlow2/multipose-lightning/1')
+                model_flag = "multipose"
 
-    # Check if the model name contains "thunder"
-    if "thunder" in model:
-        input_size = 256
-    else:
-        input_size = 192
+        # Check if the model name contains "thunder"
+        if "thunder" in model:
+            input_size = 256
 
-    # Iterate over the frames
-    while True:
-        _, frame = capture.read()
-        if frame is None: 
-            break        
+        else:
+            input_size = 192
 
-        # Copy the frame and convert it to RGB
-        image = frame.copy()
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Iterate over the frames
+        while True:
+            _, frame = capture.read()
+            if frame is None: 
+                break        
 
-        # Resize the image
-        image = cv2.resize(image, (input_size,input_size))
-        # Resize to the target shape and cast to an int32 vector
-        input_image = tf.cast(tf.image.resize_with_pad(image, input_size, input_size), dtype=tf.int32)
-        # Create a batch (input tensor)
-        input_image = tf.expand_dims(input_image, axis=0)
-        
-        # Perform inference
-        keypoints = movenet(input_image, interpreter)
-        
-        # Iterate over the keypoints
-        for instance in keypoints: 
-            # Draw the keypoints
-            denormalized_coordinates = draw_keypoints(frame, instance, threshold)
-            # Draw the edges
-            draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold)
+            # Copy the frame and convert it to RGB
+            image = frame.copy()
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # Save the output frames as a video
-        output_frames.append(frame)
-        # Update the progress bar
-        bar.update(1)
-        
-        
-    # Save the output video
-    bar2 = tqdm(total=frame_count, desc = "Outputting frames", unit = "frames")
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (initial_shape[0], initial_shape[1]))
-    for frame_p in output_frames:
-        out.write(frame_p)
-        bar2.update(1)
-    bar.close()
-    print(f"\nOutput video saved at {output_path}")
-    capture.release()
-    out.release()
-    
-    return output_frames
-
+            # Resize the image
+            image = cv2.resize(image, (input_size,input_size))
+            # Resize to the target shape and cast to an int32 vector
+            input_image = tf.cast(tf.image.resize_with_pad(image, input_size, input_size), dtype=tf.int32)
+            # Create a batch (input tensor)
+            input_image = tf.expand_dims(input_image, axis=0)
+            
+            # Perform inference
+            keypoints = movenet(input_image, interpreter, model_flag)
+            
+            # Iterate over the keypoints
+            for instance in keypoints: 
+                # Draw the keypoints
+                denormalized_coordinates = draw_keypoints(frame, instance, threshold)
+                # Draw the edges
+                draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold)
+            cv2.putText(frame, model, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            
+            # Save the output frames as a video
+            output_frames.append(frame)
+            # Update the progress bar
+            bar.update(1)
+            
+        bar.close()
+        stacked_frames.append(output_frames)
+        print(f"SHAPE: {len(stacked_frames)}")
+        print(f"Inference of {model} completed\n")
+        capture.release()
+    return stacked_frames, fps, num_frames
 
 
 ### ----------------------------------------------------------------------------------------------- ###
@@ -211,13 +271,23 @@ models = [
     "movenet_thunder_f16.tflite",
     "movenet_thunder_int8.tflite"
     ]
-    
 
-for model in models:
-    output_frames = run_inference(
-        video_path='./EMU_videos/p123-19.mp4',
-        model_folder_path = 'MoveNet/Models/tflite',
-        models = models,
-        threshold = 0.11,
-        output_path=f'C:/Users/p0121182/Project/Skeleton_Tracking/EMU_videos/{model}.mp4'
-        )
+models2 = [
+    "movenet_lightning",
+    "movenet_thunder",
+    "movenet_thunder_f16.tflite",
+    "movenet_multipose",
+    ]
+
+frames, fps, num_frames = run_inference(
+    video_path='./EMU_videos/Cut_p229-1_01.mp4',
+    model_folder_path = 'MoveNet/Models/tflite/',
+    models = models2,
+    threshold = 0.11
+    )
+
+model_comparison(
+    frames, 
+    fps,
+    num_frames, 
+    output_path = 'C:/Users/p0121182/Project/Skeleton_Tracking/EMU_videos/Comparisson_p123-19.mp4')
