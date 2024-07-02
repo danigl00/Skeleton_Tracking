@@ -28,6 +28,24 @@ EDGE_COLORS = {
     (14, 16): orange
 }
 
+models_list = [
+    "movenet_lightning_f16.tflite",     #1
+    "movenet_lightning_int8.tflite",    #2 
+    "movenet_thunder_f16.tflite",       #3
+    "movenet_thunder_int8.tflite",      #4
+    "movenet_lightning",                #5
+    "movenet_thunder",                  #6
+    "movenet_multipose"                 #7
+    ]
+
+def cut_list(binary_input, input_list):
+    # Convert binary input to a list of indices where the value is 1
+    indices = [i for i, bit in enumerate(binary_input) if bit == 1]
+        
+    # Cut the input list based on the indices
+    output_list = [input_list[i] for i in indices]
+        
+    return output_list
 
 def movenet(input_image, interpreter, model_flag):
     """Runs detection on an input image.
@@ -61,6 +79,8 @@ def movenet(input_image, interpreter, model_flag):
         keypoints_with_scores = outputs['output_0'].numpy()
     else:
         model = interpreter.signatures['serving_default']
+        output = model(input_image)
+        keypoints_with_scores = output['output_0'].numpy()[:,:,:51].reshape((6,17,3))
     return keypoints_with_scores
     
 
@@ -160,7 +180,19 @@ def model_comparison(frames, fps, num_frames, output_path):
     out.release()
     print(f"\nOutput video saved at {output_path}")
 
-
+def output_video(frames, fps, num_frames, output_path):
+    num_frames = len(frames)
+    initial_shape = frames[0].shape
+    # Save the output video
+    bar2 = tqdm(total=num_frames, desc = "Outputting frames", unit = "frames")
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (initial_shape[0], initial_shape[1]))
+    for frame_p in frames:
+        out.write(frame_p)
+        bar2.update(1)
+    bar2.close()
+    print(f"\nOutput video saved at {output_path}")
+    out.release()
 
 ### ----------------------------------------------------------------------------------------------- ###
 
@@ -215,12 +247,8 @@ def run_inference(video_path, model_folder_path, models, threshold):
                 interpreter = hub.load('https://www.kaggle.com/models/google/movenet/TensorFlow2/multipose-lightning/1')
                 model_flag = "multipose"
 
-        # Check if the model name contains "thunder"
-        if "thunder" in model:
-            input_size = 256
-
-        else:
-            input_size = 192
+        # Check if the model name contains "thunder" or "multipose"
+        input_size = 256 if "thunder" in model or "multipose" in model else 192
 
         # Iterate over the frames
         while True:
@@ -242,51 +270,70 @@ def run_inference(video_path, model_folder_path, models, threshold):
             # Perform inference
             keypoints = movenet(input_image, interpreter, model_flag)
             
-            # Iterate over the keypoints
-            for instance in keypoints: 
-                # Draw the keypoints
-                denormalized_coordinates = draw_keypoints(frame, instance, threshold)
-                # Draw the edges
-                draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold)
-            cv2.putText(frame, model, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            if model_flag == "multipose":
+                for person in keypoints:
+                    denormalized_coordinates = draw_keypoints(frame, person, threshold)
+                    draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold)
+            else:
+                # Iterate over the keypoints
+                for instance in keypoints: 
+                    # Draw the keypoints
+                    denormalized_coordinates = draw_keypoints(frame, instance, threshold)
+                    # Draw the edges
+                    draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold)
             
+            cv2.putText(frame, model, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             # Save the output frames as a video
             output_frames.append(frame)
             # Update the progress bar
             bar.update(1)
             
-        bar.close()
-        stacked_frames.append(output_frames)
-        print(f"Inference of {model} completed\n")
+        print("\nInference completed\n")
+        # Save the output video
+        bar2 = tqdm(total=num_frames, desc = "Outputting frames", unit = "frames")
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter('C:/Users/p0121182/Project/Skeleton_Tracking/Movenet/Results/EMU/Multipose.mp4', fourcc, fps, (initial_shape[0], initial_shape[1]))
+        for frame_p in output_frames:
+            out.write(frame_p)
+            bar2.update(1)
+        bar2.close()
+        print(f"\nOutput video saved at {'C:/Users/p0121182/Project/Skeleton_Tracking/Movenet/Results/EMU/Multipose.mp4'}")
         capture.release()
-    return stacked_frames, fps, num_frames
+        out.release()
+
+    return output_frames, fps, num_frames
 
 
-### ----------------------------------------------------------------------------------------------- ###
-models = [
-    "movenet_lightning_f16.tflite",
-    "movenet_lightning_int8.tflite",
-    "movenet_thunder_f16.tflite",
-    "movenet_thunder_int8.tflite"
-    ]
+### ------------------------------------------------------------------------------------------------------------ ###
 
-models2 = [
-    "movenet_lightning",
-    "movenet_thunder",
-    "movenet_thunder_f16.tflite",
-    "movenet_thunder_int8.tflite"
-    ]
-
+models = cut_list([0,  #movenet_lightning_f16.tflite
+                        0,  #movenet_lightning_int8.tflite
+                        0,  #movenet_thunder_f16.tflite
+                        0,  #movenet_thunder_int8.tflite
+                        0,  #movenet_lightning
+                        0,  #movenet_thunder
+                        1  #movenet_multipose
+                        ], models_list)
 
 frames, fps, num_frames = run_inference(
-    video_path='./EMU_videos/Cut_p229-1_01.mp4',
+    video_path='./EMU_videos/p229-1_01.mp4',
     model_folder_path = 'MoveNet/Models/tflite/',
-    models = models2,
+    models = models,
     threshold = 0.11
     )
 
+"""
+output_video(
+    frames, 
+    fps, 
+    num_frames, 
+    output_path = 'C:/Users/p0121182/Project/Skeleton_Tracking/Movenet/Results/EMU/Multipose.mp4')
+"""
+"""
 model_comparison(
     frames, 
     fps,
     num_frames, 
     output_path = 'C:/Users/p0121182/Project/Skeleton_Tracking/Movenet/Results/EMU/Comparisson2_p123-19.mp4')
+
+    """
