@@ -180,20 +180,6 @@ def model_comparison(frames, fps, num_frames, output_path):
     out.release()
     print(f"\nOutput video saved at {output_path}")
 
-def output_video(frames, fps, num_frames, output_path):
-    num_frames = len(frames)
-    initial_shape = frames[0].shape
-    # Save the output video
-    bar2 = tqdm(total=num_frames, desc = "Outputting frames", unit = "frames")
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (initial_shape[0], initial_shape[1]))
-    for frame_p in frames:
-        out.write(frame_p)
-        bar2.update(1)
-    bar2.close()
-    print(f"\nOutput video saved at {output_path}")
-    out.release()
-
 ### ----------------------------------------------------------------------------------------------- ###
 
 ## Run inference on a video
@@ -211,7 +197,6 @@ def run_inference(video_path, model_folder_path, models, threshold):
     """
     # Create a list to store the output frames and the initial shape of the video
     initial_shape = []
-    stacked_frames = []
 
     # Capture the video
     capture = cv2.VideoCapture(video_path)
@@ -321,19 +306,3 @@ frames, fps, num_frames = run_inference(
     models = models,
     threshold = 0.11
     )
-
-"""
-output_video(
-    frames, 
-    fps, 
-    num_frames, 
-    output_path = 'C:/Users/p0121182/Project/Skeleton_Tracking/Movenet/Results/EMU/Multipose.mp4')
-"""
-"""
-model_comparison(
-    frames, 
-    fps,
-    num_frames, 
-    output_path = 'C:/Users/p0121182/Project/Skeleton_Tracking/Movenet/Results/EMU/Comparisson2_p123-19.mp4')
-
-    """

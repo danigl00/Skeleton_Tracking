@@ -28,6 +28,24 @@ EDGE_COLORS = {
     (14, 16): orange
 }
 
+models_list = [
+    "movenet_lightning_f16.tflite",     #1
+    "movenet_lightning_int8.tflite",    #2 
+    "movenet_thunder_f16.tflite",       #3
+    "movenet_thunder_int8.tflite",      #4
+    "movenet_lightning",                #5
+    "movenet_thunder",                  #6
+    "movenet_multipose"                 #7
+    ]
+
+def cut_list(binary_input, input_list):
+    # Convert binary input to a list of indices where the value is 1
+    indices = [i for i, bit in enumerate(binary_input) if bit == 1]
+        
+    # Cut the input list based on the indices
+    output_list = [input_list[i] for i in indices]
+        
+    return output_list
 
 def movenet(input_image, interpreter, model_flag):
     """Runs detection on an input image.
@@ -61,9 +79,10 @@ def movenet(input_image, interpreter, model_flag):
         keypoints_with_scores = outputs['output_0'].numpy()
     else:
         model = interpreter.signatures['serving_default']
+        output = model(input_image)
+        keypoints_with_scores = output['output_0'].numpy()[:,:,:51].reshape((6,17,3))
     return keypoints_with_scores
     
-
 def draw_keypoints(frame, keypoints, threshold):
     """Draws the keypoints on a image frame
     
@@ -120,7 +139,7 @@ def draw_edges(denormalized_coordinates, frame, edges_colors, threshold):
                 pt1=(int(x1), int(y1)),
                 pt2=(int(x2), int(y2)), 
                 color=color, 
-                thickness=1, 
+                thickness=2, 
                 lineType=cv2.LINE_AA
             )
 
@@ -159,7 +178,6 @@ def model_comparison(frames, fps, num_frames, output_path):
     bar2.close()
     out.release()
     print(f"\nOutput video saved at {output_path}")
-
 
 
 ### ----------------------------------------------------------------------------------------------- ###
@@ -208,19 +226,15 @@ def run_inference(video_path, model_folder_path, models, threshold):
         else:
             model_flag = "tfhub"
             if "movenet_lightning" in model:
-                interpreter = hub.load("https://tfhub.dev/google/movenet/singlepose/lightning/4")
+                interpreter = hub.load("https://www.kaggle.com/models/google/movenet/tensorFlow2/singlepose-lightning/4")
             elif "movenet_thunder" in model:
-                interpreter = hub.load("https://tfhub.dev/google/movenet/singlepose/thunder/4")
+                interpreter = hub.load("https://www.kaggle.com/models/google/movenet/tensorFlow2/singlepose-thunder/4")
             else:
                 interpreter = hub.load('https://www.kaggle.com/models/google/movenet/TensorFlow2/multipose-lightning/1')
                 model_flag = "multipose"
 
         # Check if the model name contains "thunder"
-        if "thunder" in model:
-            input_size = 256
-
-        else:
-            input_size = 192
+        input_size = 256 if "thunder" in model or "multipose" in model else 192
 
         # Iterate over the frames
         while True:
@@ -243,11 +257,18 @@ def run_inference(video_path, model_folder_path, models, threshold):
             keypoints = movenet(input_image, interpreter, model_flag)
             
             # Iterate over the keypoints
-            for instance in keypoints: 
-                # Draw the keypoints
-                denormalized_coordinates = draw_keypoints(frame, instance, threshold)
-                # Draw the edges
-                draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold)
+            if model_flag == "multipose":
+                for person in keypoints:
+                    denormalized_coordinates = draw_keypoints(frame, person, threshold)
+                    draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold)
+            else:
+                # Iterate over the keypoints
+                for instance in keypoints: 
+                    # Draw the keypoints
+                    denormalized_coordinates = draw_keypoints(frame, instance, threshold)
+                    # Draw the edges
+                    draw_edges(denormalized_coordinates, frame, EDGE_COLORS, threshold)
+
             cv2.putText(frame, model, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             
             # Save the output frames as a video
@@ -263,30 +284,27 @@ def run_inference(video_path, model_folder_path, models, threshold):
 
 
 ### ----------------------------------------------------------------------------------------------- ###
-models = [
-    "movenet_lightning_f16.tflite",
-    "movenet_lightning_int8.tflite",
-    "movenet_thunder_f16.tflite",
-    "movenet_thunder_int8.tflite"
-    ]
 
-models2 = [
-    "movenet_lightning",
-    "movenet_thunder",
-    "movenet_thunder_f16.tflite",
-    "movenet_thunder_int8.tflite"
-    ]
-
+models = cut_list([1,  #movenet_lightning_f16.tflite
+                   0,  #movenet_lightning_int8.tflite
+                   1,  #movenet_thunder_f16.tflite
+                   0,  #movenet_thunder_int8.tflite
+                   1,  #movenet_lightning
+                   1,  #movenet_thunder
+                   0  #movenet_multipose
+                   ], models_list)
 
 frames, fps, num_frames = run_inference(
-    video_path='./EMU_videos/Cut_p229-1_01.mp4',
+    video_path='./EMU_videos/Masked_video.mp4',
     model_folder_path = 'MoveNet/Models/tflite/',
-    models = models2,
+    models = models,
     threshold = 0.11
     )
+
+patient = "p125-1"
 
 model_comparison(
     frames, 
     fps,
     num_frames, 
-    output_path = 'C:/Users/p0121182/Project/Skeleton_Tracking/Movenet/Results/EMU/Comparisson2_p123-19.mp4')
+    output_path = f'C:/Users/p0121182/Project/Skeleton_Tracking/Movenet/Results/EMU/Masked/Masked_{patient}.mp4')
