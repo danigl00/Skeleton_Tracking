@@ -301,7 +301,7 @@ frames, fps, num_frames = run_inference(
     threshold = 0.11
     )
 
-patient = "p125-1"
+patient = "p134-78"
 
 model_comparison(
     frames, 
