@@ -4,6 +4,11 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
+    
 blue = (26, 128, 187)
 orange = (234, 128, 28)
 
@@ -207,9 +212,9 @@ models = [
 ]
 
 output_frames = run_inference(
-    video_path='./EMU_videos/p123-19.mp4',
+    video_path='smb_share/TeamMembers/GalindoLazo_DanielAlejandro/Projects/Skeleton_Tracking/EMU_videos/masked_video.mp4',
     model_path=f"{model_folder_path}/{models[0]}",
     input_size = 192,
     threshold=0.11,
-    output_path='C:/Users/p0121182/Project/Skeleton_Tracking/EMU_videos/testmp4.mp4'
+    output_path='smb_share/TeamMembers/GalindoLazo_DanielAlejandro/Projects/Skeleton_Tracking/MoveNet/Results/EMU/GPU.mp4'
 )

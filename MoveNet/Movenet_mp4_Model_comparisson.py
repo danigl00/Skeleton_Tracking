@@ -4,6 +4,9 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+
 blue = (26, 128, 187)
 orange = (234, 128, 28)
 
@@ -294,17 +297,19 @@ models = cut_list([1,  #movenet_lightning_f16.tflite
                    0  #movenet_multipose
                    ], models_list)
 
+video_patient = 'masked_video'
+
 frames, fps, num_frames = run_inference(
-    video_path='./EMU_videos/Masked_video.mp4',
-    model_folder_path = 'MoveNet/Models/tflite/',
+    video_path= f'smb_share/TeamMembers/GalindoLazo_DanielAlejandro/Projects/Skeleton_Tracking/EMU_videos/{video_patient}.mp4',
+    model_folder_path = 'smb_share/TeamMembers/GalindoLazo_DanielAlejandro/Projects/Skeleton_Tracking/MoveNet/Models/tflite/',
     models = models,
     threshold = 0.11
     )
 
-patient = "p134-78"
+patient = "LONG"
 
 model_comparison(
     frames, 
     fps,
     num_frames, 
-    output_path = f'C:/Users/p0121182/Project/Skeleton_Tracking/Movenet/Results/EMU/Masked/Masked_{patient}.mp4')
+    output_path = f'smb_share/TeamMembers/GalindoLazo_DanielAlejandro/Projects/Skeleton_Tracking/MoveNet/Results/EMU/Masked/GPMasked_{patient}.mp4')
