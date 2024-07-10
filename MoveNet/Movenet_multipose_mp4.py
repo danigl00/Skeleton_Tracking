@@ -83,7 +83,6 @@ def movenet(input_image, interpreter, model_flag):
         keypoints_with_scores = output['output_0'].numpy()[:,:,:51].reshape((6,17,3))
     return keypoints_with_scores
     
-
 def draw_keypoints(frame, keypoints, threshold):
     """Draws the keypoints on a image frame
     
