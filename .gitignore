@@ -1,9 +1,4 @@
-<<<<<<< HEAD
-Dataset/EMU_videos/
-MoveNet/Results_EMU/
-MediaPipe/Results_EMU/
-YOLO/Results_EMU/
-Results_EMU_Compare/
-=======
 Results_EMU/
->>>>>>> 1bf5476 (Reoganize files)
+MoveNet/Models
+MediaPipe/Models
+YOLO/Models/
